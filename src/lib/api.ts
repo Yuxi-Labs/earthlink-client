@@ -11,9 +11,9 @@ import { useAppStore } from "@/stores/appStore";
 // Configuration
 // ============================================================================
 
-const API_BASE = "http://localhost:8000";
+const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 const API_V1 = `${API_BASE}/api/v1`;
-const WS_URL = `ws://localhost:8000/api/v1/ws/stream`;
+const WS_URL = import.meta.env.VITE_WS_URL || `ws://${new URL(API_BASE).host}/api/v1/ws/stream`;
 
 // ============================================================================
 // Types
@@ -401,27 +401,243 @@ export const agentsApi = {
   getMetrics: (id: string) => apiV1.get<{ agent_id: string; metrics: Record<string, unknown> }>(`/agents/${id}/metrics`),
 };
 
+// ============================================================================
+// Agent Capabilities Types
+// ============================================================================
+
+export interface PerceptionState {
+  current_location: Record<string, unknown>;
+  nearby_features: unknown[];
+  recent_observations: unknown[];
+  attention_focus: string | null;
+  sensory_inputs: {
+    spatial: Record<string, unknown>;
+    social: Record<string, unknown>;
+    data: Record<string, unknown>;
+  };
+}
+
+export interface Hypothesis {
+  id: string;
+  text: string;
+  confidence: number;
+  status: string;
+}
+
+export interface CausalRelation {
+  id: string;
+  cause: string;
+  effect: string;
+  strength: number;
+}
+
+export interface ReasoningState {
+  hypotheses: Hypothesis[];
+  predictions: unknown[];
+  causal_relations: CausalRelation[];
+  prediction_accuracy: number;
+  hypotheses_confirmed: number;
+  hypotheses_rejected: number;
+  current_inference: unknown | null;
+}
+
+export interface DecisionState {
+  last_decision: Record<string, unknown>;
+  decision_history: unknown[];
+  available_actions: unknown[];
+  utility_breakdown: Record<string, number>;
+  risk_assessment: Record<string, unknown>;
+  decision_strategy: string;
+  total_decisions: number;
+}
+
+export interface MemoryState {
+  episodic: { count: number; recent: unknown[] };
+  semantic: { count: number; categories: string[] };
+  procedural: { count: number; skills: string[] };
+  working: { items: unknown[]; capacity: number };
+  consolidation_pending: number;
+  total_memories: number;
+}
+
+export interface WorldModelState {
+  regions: Record<string, unknown>;
+  entities: Record<string, unknown>;
+  relationships: unknown[];
+  confidence: number;
+  last_updated: string | null;
+  model_accuracy: number;
+}
+
+export interface AdaptationState {
+  current_strategy: string;
+  strategy_history: unknown[];
+  detected_shifts: unknown[];
+  behavior_modifications: unknown[];
+  adaptation_events: unknown[];
+  performance_baseline: Record<string, unknown>;
+}
+
+export interface MonitoringState {
+  performance: {
+    avg_step_duration_ms: number;
+    p95_step_duration_ms: number;
+    success_rate: number;
+    error_count: number;
+  };
+  uncertainty: {
+    decision_confidence: number;
+    prediction_uncertainty: number;
+    calibration_score: number;
+  };
+  diagnosis: Record<string, unknown>;
+  health_status: string;
+  alerts: unknown[];
+}
+
+export interface SpecializationState {
+  primary_domain: string | null;
+  expertise_levels: Record<string, number>;
+  niche_discovered: string | null;
+  specialization_score: number;
+  domain_history: unknown[];
+}
+
+export interface EvolutionState {
+  generation: number;
+  parent_id: string | null;
+  offspring_ids: string[];
+  fitness_score: number;
+  mutations: unknown[];
+  genetic_lineage: unknown[];
+}
+
+export interface KnowledgeTransferState {
+  extracted_knowledge: unknown[];
+  shared_with_agents: string[];
+  received_from_agents: string[];
+  collective_contributions: number;
+  transfer_success_rate: number;
+}
+
+export interface OutputsState {
+  maps: unknown[];
+  summaries: unknown[];
+  theories: unknown[];
+  reports: unknown[];
+  total_outputs: number;
+}
+
+export interface CapabilitySummary {
+  active: boolean;
+  [key: string]: unknown;
+}
+
+export interface AllCapabilities {
+  perceive: CapabilitySummary;
+  explore: CapabilitySummary;
+  learn: CapabilitySummary;
+  reason: CapabilitySummary;
+  decide: CapabilitySummary;
+  act: CapabilitySummary;
+  communicate: CapabilitySummary;
+  model: CapabilitySummary;
+  adapt: CapabilitySummary;
+  monitor: CapabilitySummary;
+  memory: CapabilitySummary;
+  transfer: CapabilitySummary;
+  evolve: CapabilitySummary;
+  specialize: CapabilitySummary;
+  generate: CapabilitySummary;
+}
+
 /**
- * Worlds API
+ * Agent Capabilities API - All 15 capabilities
  */
-export const worldsApi = {
-  /** List all worlds */
-  list: () => apiV1.get<World[]>("/worlds"),
+export const capabilitiesApi = {
+  /** Get perception state */
+  getPerception: (agentId: string) => 
+    apiV1.get<{ agent_id: string; perception: PerceptionState }>(`/capabilities/${agentId}/perception`),
   
-  /** Create a new world */
-  create: (data: WorldCreateRequest) => apiV1.post<World>("/worlds", data),
+  /** Get exploration state */
+  getExploration: (agentId: string) => 
+    apiV1.get<{ agent_id: string; exploration: Record<string, unknown> }>(`/capabilities/${agentId}/exploration`),
   
-  /** Get world by ID */
-  get: (id: string) => apiV1.get<World>(`/worlds/${id}`),
+  /** Get learning state */
+  getLearning: (agentId: string) => 
+    apiV1.get<{ agent_id: string; learning: Record<string, unknown> }>(`/capabilities/${agentId}/learning`),
   
-  /** Delete a world */
-  delete: (id: string) => apiV1.delete<{ message: string; id: string }>(`/worlds/${id}`),
+  /** Get reasoning state - hypotheses, predictions, causal inferences */
+  getReasoning: (agentId: string) => 
+    apiV1.get<{ agent_id: string; reasoning: ReasoningState }>(`/capabilities/${agentId}/reasoning`),
   
-  /** Load world resources */
-  load: (id: string) => apiV1.post<{ message: string; id: string }>(`/worlds/${id}/load`),
+  /** Get decision state - utility, risk, rationale */
+  getDecisions: (agentId: string) => 
+    apiV1.get<{ agent_id: string; decisions: DecisionState }>(`/capabilities/${agentId}/decisions`),
   
-  /** Unload world resources */
-  unload: (id: string) => apiV1.post<{ message: string; id: string }>(`/worlds/${id}/unload`),
+  /** Get action state */
+  getActions: (agentId: string) => 
+    apiV1.get<{ agent_id: string; actions: Record<string, unknown> }>(`/capabilities/${agentId}/actions`),
+  
+  /** Get communication state */
+  getCommunication: (agentId: string) => 
+    apiV1.get<{ agent_id: string; communication: Record<string, unknown> }>(`/capabilities/${agentId}/communication`),
+  
+  /** Get world model state */
+  getWorldModel: (agentId: string) => 
+    apiV1.get<{ agent_id: string; world_model: WorldModelState; agent_models: Record<string, unknown>; concept_abstractions: unknown[] }>(`/capabilities/${agentId}/world-model`),
+  
+  /** Get adaptation state */
+  getAdaptation: (agentId: string) => 
+    apiV1.get<{ agent_id: string; adaptation: AdaptationState }>(`/capabilities/${agentId}/adaptation`),
+  
+  /** Get self-monitoring state */
+  getMonitoring: (agentId: string) => 
+    apiV1.get<{ agent_id: string; monitoring: MonitoringState }>(`/capabilities/${agentId}/monitoring`),
+  
+  /** Get memory state */
+  getMemory: (agentId: string) => 
+    apiV1.get<{ agent_id: string; memory: MemoryState }>(`/capabilities/${agentId}/memory`),
+  
+  /** Get knowledge transfer state */
+  getKnowledgeTransfer: (agentId: string) => 
+    apiV1.get<{ agent_id: string; knowledge_transfer: KnowledgeTransferState }>(`/capabilities/${agentId}/knowledge-transfer`),
+  
+  /** Get evolution state */
+  getEvolution: (agentId: string) => 
+    apiV1.get<{ agent_id: string; evolution: EvolutionState }>(`/capabilities/${agentId}/evolution`),
+  
+  /** Get specialization state */
+  getSpecialization: (agentId: string) => 
+    apiV1.get<{ agent_id: string; specialization: SpecializationState }>(`/capabilities/${agentId}/specialization`),
+  
+  /** Get generated outputs */
+  getOutputs: (agentId: string) => 
+    apiV1.get<{ agent_id: string; outputs: OutputsState }>(`/capabilities/${agentId}/outputs`),
+  
+  /** Get all capabilities summary */
+  getAll: (agentId: string) => 
+    apiV1.get<{ agent_id: string; capabilities: AllCapabilities }>(`/capabilities/${agentId}/all`),
+};
+
+/**
+ * Earth API - the simulation's world state
+ */
+export const earthApi = {
+  /** Get Earth metadata */
+  get: () => apiV1.get<World>("/earth"),
+  
+  /** Get current Earth state */
+  getState: () => apiV1.get<{ loaded: boolean; metadata: World; current_step: number }>("/earth/state"),
+  
+  /** Get observation space */
+  getObservationSpace: () => apiV1.get<{ type: string; shape?: number[]; dtype?: string }>("/earth/observation-space"),
+  
+  /** Get action space */
+  getActionSpace: () => apiV1.get<{ type: string; n?: number; actions?: string[] }>("/earth/action-space"),
+  
+  /** Reset Earth to initial state */
+  reset: () => apiV1.post<{ message: string; initial_observation: unknown }>("/earth/reset"),
 };
 
 /**
@@ -516,7 +732,7 @@ export const analyticsApi = {
  */
 export const readinessApi = {
   /** Calculate agent readiness */
-  calculate: (agentId: string, options?: {
+  calculate: (agentId: string, _options?: {
     target_world_id?: string;
     readiness_threshold?: number;
     save?: boolean;
@@ -692,6 +908,8 @@ class WebSocketClient {
   private maxReconnectAttempts = 5;
   private reconnectDelay = 1000;
   private messageHandlers: Map<string, ((data: WebSocketMessage) => void)[]> = new Map();
+  private messageCount = 0;
+  private lastMessageTs: number | null = null;
 
   connect() {
     if (this.ws?.readyState === WebSocket.OPEN) {
@@ -709,6 +927,9 @@ class WebSocketClient {
       this.ws.onopen = () => {
         console.log("[WS] Connected to backend");
         useAppStore.getState().setConnectionStatus("connected");
+        useAppStore.getState().addLog({ level: "info", source: "ws", message: "WebSocket connected" });
+        this.messageCount = 0;
+        this.lastMessageTs = null;
         this.reconnectAttempts = 0;
 
         // Subscribe to all channels by default
@@ -718,25 +939,49 @@ class WebSocketClient {
       this.ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data) as WebSocketMessage;
+          this.messageCount += 1;
+          this.lastMessageTs = Date.now();
+          // Throttle store updates to avoid render loops - only update every 10 messages
+          if (this.messageCount % 10 === 0) {
+            useAppStore.getState().setWsMeta({ lastTs: this.lastMessageTs, count: this.messageCount });
+          }
+          // Only log first few messages to avoid spam
+          if (this.messageCount <= 3) {
+            let payloadPreview = "";
+            try {
+              payloadPreview = ` payload=${JSON.stringify(data).slice(0, 240)}`;
+            } catch {
+              payloadPreview = " payload=[unserializable]";
+            }
+            useAppStore.getState().addLog({ level: "debug", source: "ws", message: `ws message: ${data.type} (#${this.messageCount})${payloadPreview}` });
+          }
           this.handleMessage(data);
         } catch (e) {
           console.error("[WS] Failed to parse message:", e);
         }
       };
 
-      this.ws.onclose = () => {
+      this.ws.onclose = (event) => {
         console.log("[WS] Disconnected from backend");
         useAppStore.getState().setConnectionStatus("disconnected");
+        useAppStore.getState().addLog({
+          level: "warn",
+          source: "ws",
+          message: "WebSocket disconnected",
+          detail: `code=${event.code} reason=${event.reason || "n/a"} clean=${event.wasClean} messages=${this.messageCount}`,
+        });
         this.scheduleReconnect();
       };
 
       this.ws.onerror = (error) => {
         console.error("[WS] Error:", error);
         useAppStore.getState().setConnectionStatus("disconnected");
+        useAppStore.getState().addLog({ level: "error", source: "ws", message: "WebSocket error", detail: String((error as Event)?.type || error) });
       };
     } catch (error) {
       console.error("[WS] Failed to connect:", error);
       useAppStore.getState().setConnectionStatus("disconnected");
+      useAppStore.getState().addLog({ level: "error", source: "ws", message: "WebSocket connect failed", detail: String(error) });
       this.scheduleReconnect();
     }
   }
@@ -772,17 +1017,20 @@ class WebSocketClient {
         if (payload?.tick !== undefined) {
           store.setSimulationTick(payload.tick);
         }
+        store.setWsMeta({ lastTs: Date.now() });
+        store.addSignal({ type: data.type, severity: "info", payload: payload || data.payload });
         break;
       }
 
       case "agent.updated":
       case "agent_update": {
         // Handle both full agent list and individual agent updates
-        const payload = data.payload || data.data;
+        const payload = (data.payload || (data as any).data) as { agents?: Agent[]; agent_id?: string; status?: string; lifecycle?: string } | undefined;
         
         if (payload?.agents) {
           // Full agent list update
-          store.setAgents(payload.agents);
+          store.setAgents(payload.agents as any);
+          store.addSignal({ type: data.type, severity: "info", payload: { count: payload.agents.length } });
         } else if (payload?.agent_id || data.agent_id) {
           // Individual agent status/lifecycle update
           const agentId = payload?.agent_id || data.agent_id;
@@ -800,14 +1048,81 @@ class WebSocketClient {
             store.setAgents(newAgents);
             
             console.log(`[WS] Updated agent ${agentId}: status=${payload?.status}, lifecycle=${payload?.lifecycle}`);
+            store.addSignal({ type: data.type, severity: "info", agentId, payload: { status: payload?.status, lifecycle: payload?.lifecycle } });
           }
         }
+        store.setWsMeta({ lastTs: Date.now() });
+        break;
+      }
+
+      case "agent.action": {
+        const payload = (data.payload || (data as any).data) as { action?: Record<string, unknown>; agent_id?: string } | undefined;
+        const action = payload?.action as Record<string, unknown> | undefined;
+        const agentId = data.agent_id || payload?.agent_id;
+
+        if (action && agentId) {
+          const currentAgents = store.agents;
+          const idx = currentAgents.findIndex((a) => a.id === agentId);
+
+          if (idx >= 0) {
+            const updated = { ...currentAgents[idx] } as Record<string, unknown>;
+            const metrics = { ...(currentAgents[idx].metrics || {}) } as Record<string, unknown>;
+            const actionData = action as Record<string, unknown> | undefined;
+
+            // Apply position updates from move actions
+            const position = (actionData as any)?.position ?? (actionData as any)?.to;
+            if (Array.isArray(position)) {
+              const [lat, lon, alt] = position as unknown[];
+              updated.location = {
+                ...(updated.location as Record<string, unknown> | undefined),
+                x: typeof lat === "number" ? lat : (updated.location as any)?.x,
+                y: typeof lon === "number" ? lon : (updated.location as any)?.y,
+                z: typeof alt === "number" ? alt : (updated.location as any)?.z ?? 0,
+              };
+            }
+
+            // Merge metrics like distance traveled when available
+            const distance = (actionData as any)?.distance_km;
+            if (typeof distance === "number" && Number.isFinite(distance)) {
+              const prev = typeof metrics.distance_traveled_km === "number" ? metrics.distance_traveled_km : 0;
+              metrics.distance_traveled_km = prev + distance;
+            }
+
+            if (typeof (actionData as any)?.type === "string" && (actionData as any).type === "move") {
+              updated.status = "exploring";
+            }
+
+            updated.metrics = metrics;
+
+            const next = [...currentAgents];
+            next[idx] = updated as any;
+            store.setAgents(next as any);
+            store.addSignal({ type: data.type, severity: "info", agentId, payload: action });
+          }
+        }
+        store.setWsMeta({ lastTs: Date.now() });
         break;
       }
 
       case "metrics.agent":
       case "metrics_update":
-        // Handle metrics updates
+        // Handle metrics updates and merge into the agent record
+        {
+          const payload = data.payload as { agent_id?: string; metrics?: Record<string, unknown> };
+          const agentId = payload?.agent_id || data.agent_id;
+          if (agentId && payload?.metrics) {
+            const currentAgents = store.agents;
+            const idx = currentAgents.findIndex((a) => a.id === agentId);
+            if (idx >= 0) {
+              const updated = { ...currentAgents[idx], metrics: { ...(currentAgents[idx].metrics || {}), ...payload.metrics } };
+              const next = [...currentAgents];
+              next[idx] = updated;
+              store.setAgents(next);
+              store.addSignal({ type: data.type, severity: "info", agentId, payload: payload.metrics });
+            }
+          }
+        }
+        store.setWsMeta({ lastTs: Date.now() });
         break;
     }
 
@@ -826,6 +1141,7 @@ class WebSocketClient {
 
   /** Subscribe to channels */
   subscribe(channels: SubscriptionChannel[], agentIds?: string[], worldIds?: string[]) {
+    useAppStore.getState().addLog({ level: "info", source: "ws", message: `Subscribing: ${channels.join(",")}` });
     this.send({
       type: "subscribe",
       channels,

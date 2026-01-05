@@ -63,7 +63,7 @@ export function getCesiumViewState(viewer: CesiumViewer) {
  * 
  * @param config - Configuration for deck.gl + Cesium integration
  */
-export function initializeDeckGLOverlay(config: DeckGLCesiumConfig) {
+export function initializeDeckGLOverlay(_config: DeckGLCesiumConfig) {
   // This will be implemented when we add advanced deck.gl visualizations
   // to the 3D globe view (trajectories, heatmaps, etc.)
   

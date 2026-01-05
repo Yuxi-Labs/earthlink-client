@@ -1,29 +1,16 @@
 @import "tailwindcss";
 
-/* Custom theme variables */
-:root {
-  --color-primary: #3b82f6;
-  --color-secondary: #6366f1;
-  --color-accent: #22d3ee;
-  --color-success: #22c55e;
-  --color-warning: #f59e0b;
-  --color-error: #ef4444;
-  
-  /* Dark theme (default) */
-  --color-bg-primary: #0a0a0f;
-  --color-bg-secondary: #111118;
-  --color-bg-tertiary: #1a1a24;
-  --color-bg-elevated: #22222e;
-  
-  --color-border: #2a2a3a;
-  --color-border-subtle: #1f1f2a;
-  
-  --color-text-primary: #f8fafc;
-  --color-text-secondary: #94a3b8;
-  --color-text-muted: #64748b;
+/* ═══════════════════════════════════════════════════════════════════════════
+   EARTHLINK - Professional Dark Theme
+   Scientific research platform for autonomous agent exploration
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+@theme {
+  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", "Fira Code", ui-monospace, monospace;
 }
 
-/* Base styles */
+/* Base */
 html, body, #root {
   height: 100%;
   margin: 0;
@@ -32,34 +19,22 @@ html, body, #root {
 }
 
 body {
-  background-color: var(--color-bg-primary);
-  color: var(--color-text-primary);
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  background: #09090b;
+  color: #fafafa;
 }
 
-/* Scrollbar styling */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+/* Scrollbar */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: #18181b; }
+::-webkit-scrollbar-thumb { background: #3f3f46; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #52525b; }
+
+/* Animations */
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
-::-webkit-scrollbar-track {
-  background: var(--color-bg-secondary);
-}
-
-::-webkit-scrollbar-thumb {
-  background: var(--color-border);
-  border-radius: 4px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: var(--color-text-muted);
-}
-
-/* Focus styles */
-:focus-visible {
-  outline: 2px solid var(--color-primary);
-  outline-offset: 2px;
+.animate-fade-in {
+  animation: fade-in 0.15s ease-out;
 }
