@@ -79,19 +79,19 @@ function getAgentPosition(agent: Agent): [number, number] {
   return [151.2093, -33.8688];
 }
 
-// Default view state - focus on Australia (VW twin)
+// Default view state - global view to see all agents worldwide
 const INITIAL_VIEW_STATE = {
-  longitude: 133.7751,
-  latitude: -25.2744,
-  zoom: 3.5,
+  longitude: 0,
+  latitude: 20,
+  zoom: 1.5,
   pitch: 0,
   bearing: 0,
 };
-// Cesium 3D camera settings for Australia
+// Cesium 3D camera settings for global view
 const CESIUM_INITIAL_CAMERA = {
-  longitude: 133.7751,
-  latitude: -25.2744,
-  height: 5000000, // 5000km altitude for continent view
+  longitude: 0,
+  latitude: 20,
+  height: 20000000, // 20000km altitude for global view
 };
 const MAX_TRAIL_POINTS = 120;
 // Get centroid of agent positions for auto-centering
@@ -538,17 +538,7 @@ function getAgentMetric(agent: Agent, key: string): number {
             infoBox={true}
             selectionIndicator={true}
           >
-            {/* Auto-center on agents */}
-            {agentMarkers.length > 0 && (
-              <CameraFlyTo 
-                destination={Cartesian3.fromDegrees(
-                  getAgentCentroid(agentMarkers)[0],
-                  getAgentCentroid(agentMarkers)[1],
-                  CESIUM_INITIAL_CAMERA.height
-                )}
-                duration={2}
-              />
-            )}
+            {/* Removed auto-center on agents - map should stay at initial position */}
             
             {/* Agent entities on globe */}
             {agentMarkers.map((marker) => (
