@@ -58,7 +58,8 @@ export function AgentCard({
   const metrics = agent.metrics || {};
   
   const knowledge = Number(metrics.knowledge_items_learned || 0);
-  const curiosity = Number(metrics.curiosity_score || 0.5) * 100;
+  // curiosity_score is now always provided by backend with individual values (0.3-0.9 range)
+  const curiosity = Number(metrics.curiosity_score ?? 0) * 100;
   const distance = Number(metrics.distance_traveled_km || 0);
   const reward = Number(metrics.total_reward || 0);
   const messages = Number(metrics.messages_sent || 0);

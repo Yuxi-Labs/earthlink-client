@@ -17,6 +17,8 @@ import {
   Map,
   Layers,
   Globe2,
+  Sparkles,
+  Radio,
 } from "lucide-react";
 import { useAppStore } from "@/stores/appStore";
 import { Tooltip } from "@/components/overlays/Tooltip";
@@ -66,6 +68,10 @@ export function ToolBar() {
     simulationState,
     simulationSpeed,
     setSimulationSpeed,
+    showCoverageOverlay,
+    showSignalOverlay,
+    toggleCoverageOverlay,
+    toggleSignalOverlay,
   } = useAppStore();
 
   const { start, pause } = useSimulation();
@@ -146,6 +152,26 @@ export function ToolBar() {
           shortcut="3"
           active={viewMode === "3d"}
           onClick={() => setViewMode("3d")}
+        />
+      </div>
+
+      <Divider />
+
+      {/* Visual Data Analysis Layers */}
+      <div className="flex items-center gap-0.5">
+        <ToolButton
+          icon={<Sparkles className="w-3.5 h-3.5" />}
+          label="Exploration Analysis"
+          shortcut="H"
+          active={showCoverageOverlay}
+          onClick={toggleCoverageOverlay}
+        />
+        <ToolButton
+          icon={<Radio className="w-3.5 h-3.5" />}
+          label="Learning Analytics"
+          shortcut="S"
+          active={showSignalOverlay}
+          onClick={toggleSignalOverlay}
         />
       </div>
 

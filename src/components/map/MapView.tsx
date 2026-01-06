@@ -69,11 +69,19 @@ function getAgentSignals(agent: Agent) {
 // deck.gl expects: [longitude, latitude]
 function getAgentPosition(agent: Agent): [number, number] {
   const loc = agent.location as { x?: number; y?: number; lon?: number; lat?: number } | undefined;
+  
+  // Debug log to see what location data we're getting
+  if (!loc) {
+    console.log(`[MapView] Agent ${agent.name} has NO location data, using Sydney default`);
+  }
+  
   if (loc) {
     // location.x = lat, location.y = lon (per backend EarthlinkLocationMixin)
     const lat = loc.x ?? -33.8688;
     const lon = loc.y ?? 151.2093;
-    return [safeNumber(lon, 151.2093), safeNumber(lat, -33.8688)];
+    const position: [number, number] = [safeNumber(lon, 151.2093), safeNumber(lat, -33.8688)];
+    console.log(`[MapView] Agent ${agent.name} location:`, { raw: loc, parsed: position });
+    return position;
   }
   // Default to Sydney coordinates for visualization [lon, lat]
   return [151.2093, -33.8688];
@@ -149,11 +157,45 @@ export function MapView() {
   const { viewMode, agents, lastAgentUpdateMs, showCoverageOverlay, showSignalOverlay } = useAppStore();
   const [viewState, setViewState] = useState(INITIAL_VIEW_STATE);
   const [hoveredAgent, setHoveredAgent] = useState<AgentMarker | null>(null);
+  const [hoveredDeckObject, setHoveredDeckObject] = useState<any>(null);
   const [, setCesiumViewer] = useState<CesiumViewer | null>(null);
   const mapRef = useRef<MapRef>(null);
   const [agentTrails, setAgentTrails] = useState<Map<string, AgentTrail>>(new Map());
   const [currentTime, setCurrentTime] = useState(() => Date.now() / 1000);
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const [deckGLReady, setDeckGLReady] = useState(false);
+  const [webGLError, setWebGLError] = useState(false);
+  
+  // Delay DeckGL mount to avoid WebGL context race condition
+  // Increased delay and added error handling for WebGL context
+  useEffect(() => {
+    // Immediate check for WebGL support
+    const checkWebGL = () => {
+      try {
+        const canvas = document.createElement('canvas');
+        const gl = canvas.getContext('webgl2') || canvas.getContext('webgl');
+        if (gl) {
+          console.log('[MapView] WebGL support verified');
+          setDeckGLReady(true);
+          return true;
+        } else {
+          console.error('[MapView] WebGL not supported');
+          setWebGLError(true);
+          return false;
+        }
+      } catch (error) {
+        console.error('[MapView] WebGL initialization failed:', error);
+        setWebGLError(true);
+        return false;
+      }
+    };
+    
+    // Try immediately, fallback to delayed check if needed
+    if (!checkWebGL()) {
+      const timer = setTimeout(() => checkWebGL(), 500);
+      return () => clearTimeout(timer);
+    }
+  }, []);
 
   // Adjust pitch/bearing based on view mode
 function getAgentMetric(agent: Agent, key: string): number {
@@ -177,26 +219,31 @@ function getAgentMetric(agent: Agent, key: string): number {
   }, [viewMode, viewState]);
 
   // Convert agents from store to map markers (safely handling dynamic backend data)
-  // Constrain to Australia bounding box (lon 110..155, lat -45..-10)
   const agentMarkers = useMemo((): AgentMarker[] => {
-    return agents
-      .map((a) => {
-        const position = getAgentPosition(a);
-        return {
-          id: a.id,
-          name: a.name,
-          position,
-          status: (a.status as string) ?? "idle",
-          color: getStatusColor(a.status as string),
-          curiosity_score: safeNumber(a.metrics?.curiosity_score),
-          knowledge_acquired: safeNumber(a.metrics?.knowledge_acquired),
-          pulseOffset: getAgentPulseOffset(a.id), // Stable unique timing based on ID
-        };
-      })
-      .filter((m) => {
-        const [lon, lat] = m.position;
-        return lon >= 110 && lon <= 155 && lat >= -45 && lat <= -10;
-      });
+    const markers = agents.map((a) => {
+      const position = getAgentPosition(a);
+      return {
+        id: a.id,
+        name: a.name,
+        position,
+        status: (a.status as string) ?? "idle",
+        color: getStatusColor(a.status as string),
+        curiosity_score: safeNumber(a.metrics?.curiosity_score),
+        knowledge_acquired: safeNumber(a.metrics?.knowledge_acquired),
+        pulseOffset: getAgentPulseOffset(a.id), // Stable unique timing based on ID
+      };
+    });
+    
+    // Debug logging
+    if (markers.length > 0) {
+      console.log('[MapView] Agent markers:', markers.map(m => ({ 
+        name: m.name, 
+        position: m.position, 
+        status: m.status 
+      })));
+    }
+    
+    return markers;
   }, [agents]);
 
   // Always generate coverage points for each agent - ensures hexagons render even with no metrics
@@ -311,183 +358,234 @@ function getAgentMetric(agent: Agent, key: string): number {
   }, [lastAgentUpdateMs, nowMs]);
 
   const deckLayers = useMemo(() => {
-    const layers = [
-      // Large agent presence halos - always visible at any zoom
-      new ScatterplotLayer({
-        id: "agent-presence-halo",
-        data: agentMarkers,
-        getPosition: (d: any) => d.position,
-        getFillColor: (d: any) => {
-          const pulse = 0.4 + 0.2 * Math.sin((currentTime + d.pulseOffset) * 2);
-          return [d.color[0], d.color[1], d.color[2], Math.floor(80 * pulse)];
-        },
-        getRadius: 200000,
-        radiusUnits: "meters",
-        radiusMinPixels: 30,
-        radiusMaxPixels: 200,
-        stroked: false,
-        pickable: false,
-        opacity: 0.7,
-        parameters: { depthTest: false },
-        updateTriggers: { getFillColor: [currentTime] },
-      }),
-      // Glow layer under trails for neon effect
-      new PathLayer({
-        id: "agent-trails-glow",
-        data: Array.from(agentTrails.entries())
-          .map(([id, trail]) => {
-            const marker = agentMarkers.find((a) => a.id === id);
-            return { id, path: trail.path, color: marker?.color || [255, 255, 255, 255] };
-          })
-          .filter((d) => d.path.length > 1),
-        getPath: (d: any) => d.path,
-        getColor: (d: any) => [...d.color.slice(0, 3), 60] as [number, number, number, number],
-        getWidth: 18,
-        widthUnits: "pixels",
-        widthMinPixels: 8,
-        widthMaxPixels: 24,
-        capRounded: true,
-        jointRounded: true,
-        billboard: false,
-        pickable: false,
-        parameters: { depthTest: false },
-      }),
-      new TripsLayer({
-        id: "agent-trails",
-        data: Array.from(agentTrails.entries())
-          .map(([id, trail]) => {
-            const marker = agentMarkers.find((a) => a.id === id);
-            return { id, trail, color: marker?.color || [255, 255, 255, 255] };
-          })
-          .filter((d) => d.trail.path.length > 1),
-        getPath: (d: any) => d.trail.path,
-        getTimestamps: (d: any) => d.trail.timestamps,
-        getColor: (d: any) => [...d.color.slice(0, 3), 220] as [number, number, number, number],
-        opacity: 1,
-        widthMinPixels: 3,
-        widthMaxPixels: 8,
-        trailLength: 120,
-        fadeTrail: true,
-        currentTime,
-        capRounded: true,
-        jointRounded: true,
-        shadowEnabled: false,
-        parameters: { depthTest: false },
-      }),
-    ];
+    // Don't create layers if WebGL is not ready or has errors
+    if (!deckGLReady || webGLError) {
+      console.log('[MapView] DeckGL not ready or has error, skipping layers');
+      return [];
+    }
+    
+    console.log('[MapView] Creating deck.gl DATA ANALYSIS layers...', {
+      agentMarkers: agentMarkers.length,
+      trails: agentTrails.size,
+      coveragePoints: coveragePoints.length,
+      showCoverage: showCoverageOverlay,
+      showSignals: showSignalOverlay,
+      viewMode
+    });
+    
+    // deck.gl for VISUAL EXPLORATORY DATA ANALYSIS
+    // Understanding agent behavior: what they explore, learn, how curiosity drives them
+    const layers = [];
+    
+    // EXPLORATION TRAJECTORIES - Visualize agent movement through information/geographic space
+    const trailData = Array.from(agentTrails.entries())
+      .map(([id, trail]) => {
+        const marker = agentMarkers.find((a) => a.id === id);
+        const agent = agents.find(a => a.id === id);
+        return { 
+          id, 
+          path: trail.path, 
+          timestamps: trail.timestamps, 
+          color: marker?.color || [255, 255, 255, 255],
+          agent
+        };
+      })
+      .filter((d) => d.path.length > 1);
+    
+    console.log('[MapView] Trail data:', {
+      trailData: trailData.length,
+      sampleTrail: trailData[0],
+      agentTrailsSize: agentTrails.size
+    });
+    
+    if (trailData.length > 0 && showCoverageOverlay) {
+      layers.push(
+        // AGENT MOVEMENT TRAJECTORIES - Animated trips showing exploration paths
+        // Proper TripsLayer configuration matching NYC taxi trips example
+        new TripsLayer({
+          id: "exploration-trajectories",
+          data: trailData,
+          getPath: (d: any) => d.path,
+          getTimestamps: (d: any) => d.timestamps,
+          getColor: (d: any) => d.color || [253, 128, 93], // Default orange
+          
+          // Animation configuration
+          opacity: 0.8,
+          widthMinPixels: 2,
+          widthMaxPixels: 8,
+          trailLength: 180, // 180 seconds of history visible
+          fadeTrail: true,
+          currentTime,
+          
+          // Visual styling
+          capRounded: true,
+          jointRounded: true,
+          pickable: true,
+          
+          // Rendering options
+          shadowEnabled: false, // Disable for performance
+          parameters: { 
+            depthTest: false // Trails always visible above terrain
+          }
+        }) as any
+      );
+    }
 
-    if (showCoverageOverlay) {
+    // SPATIAL EXPLORATION DENSITY - 3D elevated hexagons showing exploration intensity
+    // Proper deck.gl HexagonLayer configuration matching UK Road Safety example
+    console.log('[MapView] Hexagon layer check:', {
+      showCoverageOverlay,
+      coveragePointsLength: coveragePoints.length,
+      viewMode,
+      elevationScale: viewMode === "2.5d" ? 5000 : viewMode === "3d" ? 5000 : 2000, // Show in 2D with lower scale
+      samplePoint: coveragePoints[0]
+    });
+    
+    if (showCoverageOverlay && coveragePoints.length > 0) {
       layers.push(
         new HexagonLayer({
-          id: "coverage-hexagon",
+          id: "exploration-density",
           data: coveragePoints,
+          gpuAggregation: true, // Enable GPU acceleration for large datasets
           getPosition: (d: any) => d.position,
           getElevationWeight: (d: any) => d.weight,
           getColorWeight: (d: any) => d.weight,
-          elevationScale: viewMode === "2.5d" ? 8000 : 0,
-          extruded: viewMode === "2.5d",
-          radius: 50000,
-          coverage: 0.9,
-          upperPercentile: 100,
+          
+          // 3D Extrusion - height represents exploration intensity
+          extruded: true,
+          elevationScale: viewMode === "2.5d" ? 5000 : viewMode === "3d" ? 5000 : 2000, // Visible even in 2D
+          elevationRange: [0, 3000], // Min/max elevation in meters
+          
+          // Spatial aggregation controls
+          radius: 2000, // 2km hexagons for city-scale patterns
+          coverage: 0.7, // 70% coverage - professional appearance
+          upperPercentile: 100, // Include all data points
+          
+          // Color encoding - gradient from low to high exploration
           colorRange: [
-            [0, 60, 80, 180],
-            [0, 120, 140, 200],
-            [20, 180, 160, 220],
-            [60, 220, 180, 235],
-            [120, 255, 200, 250],
-            [180, 255, 240, 255],
+            [1, 152, 189],    // Deep blue - minimal exploration
+            [73, 227, 206],   // Turquoise
+            [216, 254, 181],  // Light green
+            [254, 237, 177],  // Yellow-green
+            [254, 173, 84],   // Orange
+            [209, 55, 78]     // Red - intense exploration hotspots
           ],
-          elevationRange: [0, 100000],
-          pickable: false,
-          opacity: 0.85,
+          
+          // Visual enhancement
+          pickable: true,
+          opacity: 0.8,
           material: {
-            ambient: 0.7,
-            diffuse: 0.9,
-            shininess: 50,
-            specularColor: [80, 200, 220],
+            ambient: 0.64,
+            diffuse: 0.6,
+            shininess: 32,
+            specularColor: [51, 51, 51]
           },
+          
+          // Smooth transitions when data updates
+          transitions: {
+            elevationScale: 600
+          }
         }) as any
       );
     }
 
+    // KNOWLEDGE ACQUISITION & CURIOSITY ANALYSIS
+    // Visualize what agents are learning and why
     if (showSignalOverlay) {
-      layers.push(
-        new ScatterplotLayer({
-          id: "signal-overlay-core",
-          data: signalBursts,
-          getPosition: (d: any) => d.position,
-          getFillColor: (d: any) => {
-            const pulse = 0.5 + 0.5 * Math.sin((currentTime + d.pulseOffset) * 4);
-            return [d.color[0], d.color[1], d.color[2], Math.floor(d.color[3] * pulse)] as [number, number, number, number];
-          },
-          getRadius: (d: any) => d.size * 0.5,
-          radiusUnits: "meters",
-          radiusMinPixels: 8,
-          stroked: false,
-          pickable: false,
-          opacity: 0.9,
-          parameters: { depthTest: false },
-          updateTriggers: { getFillColor: [currentTime] },
-        }) as any,
-        new ScatterplotLayer({
-          id: "signal-overlay-ring",
-          data: signalBursts,
-          getPosition: (d: any) => d.position,
-          getFillColor: () => [0, 0, 0, 0] as [number, number, number, number],
-          getLineColor: (d: any) => {
-            const phase = ((currentTime + d.pulseOffset) * 2) % 1;
-            const alpha = Math.floor(220 * (1 - phase));
-            return [d.color[0], d.color[1], d.color[2], alpha] as [number, number, number, number];
-          },
-          getRadius: (d: any) => {
-            const phase = ((currentTime + d.pulseOffset) * 2) % 1;
-            return d.size * (0.6 + phase * 1.5);
-          },
-          radiusUnits: "meters",
-          radiusMinPixels: 12,
-          stroked: true,
-          filled: false,
-          lineWidthMinPixels: 3,
-          lineWidthMaxPixels: 6,
-          pickable: false,
-          opacity: 0.85,
-          parameters: { depthTest: false },
-          updateTriggers: {
-            getLineColor: [currentTime],
-            getRadius: [currentTime],
-          },
-        }) as any,
-        new ArcLayer({
-          id: "comms-arcs",
-          data: commsArcs,
-          getSourcePosition: (d: any) => d.sourcePosition,
-          getTargetPosition: (d: any) => d.targetPosition,
-          getSourceColor: (d: any) => {
-            const pulse = 0.6 + 0.4 * Math.sin(currentTime * 3 + d.weight);
-            const c = d.sourceColor;
-            return [c[0], c[1], c[2], Math.floor(200 * pulse)];
-          },
-          getTargetColor: (d: any) => {
-            const pulse = 0.6 + 0.4 * Math.sin(currentTime * 3 + d.weight + 1.5);
-            const c = d.targetColor;
-            return [c[0], c[1], c[2], Math.floor(180 * pulse)];
-          },
-          getWidth: (d: any) => 3 + Math.min(d.weight, 60) * 0.2,
-          getHeight: 0.4,
-          greatCircle: true,
-          numSegments: 64,
-          pickable: false,
-          parameters: { depthTest: false },
-          updateTriggers: {
-            getSourceColor: [currentTime],
-            getTargetColor: [currentTime],
-          },
-        }) as any
-      );
+      const knowledgeData = agents.map(agent => {
+        const pos = getAgentPosition(agent);
+        const knowledge = getAgentMetric(agent, 'knowledge_acquired') || 0;
+        const curiosity = getAgentMetric(agent, 'curiosity_score') || 0;
+        const uniqueLocations = getAgentMetric(agent, 'unique_locations_visited') || 0;
+        
+        return {
+          position: pos,
+          knowledge,
+          curiosity,
+          uniqueLocations,
+          name: agent.name,
+          lifecycle: agent.lifecycle
+        };
+      }).filter(d => d.knowledge > 0 || d.curiosity > 0);
+      
+      if (knowledgeData.length > 0) {
+        layers.push(
+          // KNOWLEDGE ACQUISITION - Size by knowledge, color by curiosity
+          new ScatterplotLayer({
+            id: "knowledge-acquisition",
+            data: knowledgeData,
+            getPosition: (d: any) => d.position,
+            
+            // Color encoding - curiosity drives exploration
+            getFillColor: (d: any) => {
+              // Gradient from red (low curiosity) to blue (high curiosity)
+              const curiosity = d.curiosity;
+              return [
+                255 * (1 - curiosity), // Red component decreases
+                100,                   // Constant green
+                255 * curiosity,       // Blue component increases
+                200
+              ];
+            },
+            
+            // Size encoding - knowledge accumulation
+            getRadius: (d: any) => Math.max(2000, Math.sqrt(d.knowledge) * 1000),
+            radiusUnits: "meters",
+            radiusMinPixels: 10,
+            radiusMaxPixels: 40,
+            
+            // Visual styling
+            stroked: true,
+            filled: true,
+            lineWidthMinPixels: 2,
+            getLineColor: [255, 255, 255, 255],
+            pickable: true,
+            opacity: 0.75,
+            
+            // Smooth transitions
+            transitions: {
+              getRadius: 500,
+              getFillColor: 500
+            }
+          }) as any,
+          
+          // AGENT PROXIMITY NETWORK - Connection arcs showing potential knowledge exchange
+          // Proper ArcLayer configuration matching US migration example
+          new ArcLayer({
+            id: "agent-proximity-network",
+            data: commsArcs,
+            
+            // Position accessors
+            getSourcePosition: (d: any) => d.sourcePosition,
+            getTargetPosition: (d: any) => d.targetPosition,
+            
+            // Color gradient - source to target
+            getSourceColor: [180, 232, 255, 120],  // Light blue source
+            getTargetColor: [100, 180, 255, 80],    // Deeper blue target
+            
+            // Arc styling
+            getWidth: 1.5,
+            getHeight: 0.15,  // Gentle curve for visibility
+            getTilt: 0,       // No rotation
+            
+            // Rendering options
+            greatCircle: true,  // Follow Earth curvature
+            numSegments: 50,    // Smooth curve
+            pickable: true,
+            
+            // Always visible above terrain
+            parameters: { 
+              depthTest: false 
+            }
+          }) as any
+        );
+      }
     }
+    
+    console.log('[MapView] Created', layers.length, 'deck.gl layers');
 
     return layers;
-  }, [agentMarkers, agentTrails, commsArcs, coveragePoints, currentTime, showCoverageOverlay, showSignalOverlay, signalBursts, viewMode]);
+  }, [deckGLReady, webGLError, agentMarkers, agentTrails, commsArcs, coveragePoints, currentTime, showCoverageOverlay, showSignalOverlay, signalBursts, viewMode]);
 
   // Zoom controls
   const handleZoomIn = () => setViewState((s) => ({ ...s, zoom: Math.min(s.zoom + 1, 20) }));
@@ -617,18 +715,59 @@ function getAgentMetric(agent: Agent, key: string): number {
             })}
           </MapGL>
 
-          {/* deck.gl overlay for agent movement trails */}
-          <DeckGL
-            viewState={adjustedViewState}
-            controller={false}
-            layers={deckLayers}
-            style={{ pointerEvents: 'none' }}
-          />
+          {/* deck.gl overlay for visualization effects (trails, heatmaps, signals) */}
+          {/* Properly integrated with MapLibre GL using absolute positioning */}
+          {!webGLError && deckGLReady && (
+            <DeckGL
+              viewState={adjustedViewState}
+              controller={true}
+              onViewStateChange={({ viewState: newViewState }) => setViewState(newViewState)}
+              layers={deckLayers}
+              style={{ 
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                height: '100%',
+                pointerEvents: 'auto'
+              }}
+              onHover={(info) => {
+                if (info.object) {
+                  setHoveredDeckObject(info);
+                } else {
+                  setHoveredDeckObject(null);
+                }
+              }}
+              getCursor={() => hoveredDeckObject ? 'pointer' : 'grab'}
+              onWebGLInitialized={(gl) => {
+                if (!gl) {
+                  console.error('[DeckGL] WebGL context not initialized');
+                  setWebGLError(true);
+                } else {
+                  console.log('[DeckGL] WebGL context initialized successfully');
+                }
+              }}
+              onError={(error) => {
+                console.error('[DeckGL] Error:', error);
+                setWebGLError(true);
+              }}
+              onLoad={() => {
+                console.log('[DeckGL] Loaded and ready');
+              }}
+            />
+          )}
+          
+          {/* WebGL Error Message */}
+          {webGLError && (
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 px-4 py-3 bg-[var(--color-bg-elevated)]/95 backdrop-blur border border-[var(--color-border)] rounded-lg shadow-lg text-[var(--color-text-muted)] text-sm">
+              ⚠️ WebGL visualization layers unavailable. Map markers still visible.
+            </div>
+          )}
         </>
       )}
 
       {/* Agent Hover Tooltip */}
-      {viewMode !== "3d" && hoveredAgent && (
+      {viewMode !== "3d" && hoveredAgent && !hoveredDeckObject && (
         <div className="absolute top-4 left-1/2 -translate-x-1/2 px-4 py-2 bg-[var(--color-bg-elevated)]/95 backdrop-blur border border-[var(--color-border)] rounded-lg shadow-lg">
           <div className="flex items-center gap-3">
             <div 
@@ -659,6 +798,48 @@ function getAgentMetric(agent: Agent, key: string): number {
               );
             })()}
           </div>
+        </div>
+      )}
+
+      {/* deck.gl Layer Tooltip */}
+      {viewMode !== "3d" && hoveredDeckObject && hoveredDeckObject.object && (
+        <div 
+          className="absolute px-3 py-2 bg-[var(--color-bg-elevated)]/95 backdrop-blur border border-[var(--color-border)] rounded-lg shadow-lg text-xs"
+          style={{
+            left: hoveredDeckObject.x + 10,
+            top: hoveredDeckObject.y + 10,
+            pointerEvents: 'none'
+          }}
+        >
+          {hoveredDeckObject.layer?.id === 'knowledge-acquisition' && (
+            <div className="space-y-1">
+              <div className="font-semibold text-[var(--color-text-primary)]">{hoveredDeckObject.object.name}</div>
+              <div className="text-[var(--color-text-muted)] space-y-0.5">
+                <div>Lifecycle: <span className="text-[var(--color-text-primary)]">{hoveredDeckObject.object.lifecycle || 'unknown'}</span></div>
+                <div>Knowledge Acquired: <span className="text-[var(--color-accent)]">{hoveredDeckObject.object.knowledge.toFixed(1)}</span></div>
+                <div>Curiosity Score: <span className="text-[var(--color-accent)]">{(hoveredDeckObject.object.curiosity * 100).toFixed(0)}%</span></div>
+                <div>Locations Visited: {hoveredDeckObject.object.uniqueLocations}</div>
+              </div>
+            </div>
+          )}
+          {hoveredDeckObject.layer?.id === 'exploration-density' && (
+            <div className="space-y-1">
+              <div className="font-semibold text-[var(--color-text-primary)]">Exploration Density</div>
+              <div className="text-[var(--color-text-muted)]">
+                <div>Agent Count: {hoveredDeckObject.object.points?.length || 0}</div>
+                <div>Activity Level: {(hoveredDeckObject.object.colorValue || 0).toFixed(1)}</div>
+              </div>
+            </div>
+          )}
+          {hoveredDeckObject.layer?.id === 'exploration-trajectories' && (
+            <div className="space-y-1">
+              <div className="font-semibold text-[var(--color-text-primary)">Exploration Path</div>
+              <div className="text-[var(--color-text-muted)]">
+                <div>Waypoints: {hoveredDeckObject.object.path.length}</div>
+                <div>Time Span: {((hoveredDeckObject.object.timestamps[hoveredDeckObject.object.timestamps.length - 1] - hoveredDeckObject.object.timestamps[0]) / 60).toFixed(1)} min</div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

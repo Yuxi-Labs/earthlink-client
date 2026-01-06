@@ -132,8 +132,8 @@ export const useAppStore = create<AppState>((set) => ({
   showMetricsPanel: true,
   showReadinessPanel: false,
   showTerminal: true,
-  showCoverageOverlay: true,
-  showSignalOverlay: true,
+  showCoverageOverlay: true,   // ON by default - spatial density analysis
+  showSignalOverlay: true,     // ON by default - activity intensity analysis
   toggleAgentPanel: () => set((state) => ({ showAgentPanel: !state.showAgentPanel })),
   toggleMetricsPanel: () => set((state) => ({ showMetricsPanel: !state.showMetricsPanel })),
   toggleReadinessPanel: () => set((state) => ({ showReadinessPanel: !state.showReadinessPanel })),
